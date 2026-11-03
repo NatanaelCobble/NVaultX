@@ -1,0 +1,18 @@
+name: NVaultX
+main: org.nvaultx.NVaultPlugin
+version: "1.0.0"
+author: Natanael
+website: https://github.com/NatanaelCobble/NVaultX
+api: ["3.0.6"]
+load: POSTWORLD
+description: Native economy, permission and chat service bridge for PowerNukkitX
+softdepend: [FrenchEconomy, LuckPerms, ShopUI, StatBoard]
+commands:
+  nvaultx:
+    description: Affiche les fournisseurs NVaultX
+    usage: /nvaultx
+    permission: nvaultx.admin
+permissions:
+  nvaultx.admin:
+    description: Consulter les fournisseurs de services
+    default: op
