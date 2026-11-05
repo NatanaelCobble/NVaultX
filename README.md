@@ -1,94 +1,82 @@
 # NVaultX
 
-Pont natif entre les plugins **PowerNukkitX**, inspiré du principe de Vault : une API commune pour l'économie, les permissions et les métadonnées de chat.
+NVaultX provides a common API for economy, permissions and chat metadata on PowerNukkitX. Server plugins discover providers through the native PNX service registry.
 
 ## Installation
 
-1. Utiliser **PowerNukkitX 3.0.6**. Le cœur NVaultX fonctionne sous Java 21 ou plus récent ; **ShopUI 2.0.1 publié nécessite Java 25**.
-2. Placer `NVaultX-1.0.0.jar` dans `plugins/`.
-3. Installer les fournisseurs souhaités : **FrenchEconomy 1.0** pour l'économie, **LuckPerms PNX 5.4.0** pour les groupes et préfixes.
-4. Ajouter éventuellement **ShopUI 2.0.1** et **StatBoard 1.0.0**.
-5. Redémarrer le serveur et exécuter `/nvaultx` depuis la console ou avec `nvaultx.admin` (op par défaut).
+1. Use PowerNukkitX 3.0.6 with Java 21 or newer. The published ShopUI 2.0.1 JAR requires Java 25.
+2. Download `NVaultX-1.0.0.jar` from the [release](https://github.com/NatanaelCobble/NVaultX/releases/tag/v1.0.0) and place it in `plugins/`.
+3. Install FrenchEconomy 1.0 for economy features and LuckPerms PNX 5.4.0 for group and chat metadata features as needed. ShopUI 2.0.1 and StatBoard 1.0.0 are optional integrations.
+4. Restart and run `/nvaultx` from the console or with the `nvaultx.admin` permission, which defaults to operators.
 
-Ne pas installer le JAR `NVaultX-API` dans `plugins/` : il sert uniquement à compiler d'autres plugins.
+Keep the `NVaultX-API` JAR on the developer's compile classpath. Only the main NVaultX JAR goes in the server's plugin directory.
 
-Si le système d'événements de PNX produit une erreur d'accès à `ClassLoader.defineClass`, les tests ont utilisé ces options de lancement Java :
+If PNX reports an access error for `ClassLoader.defineClass`, use these Java options:
 
 ```text
 java --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED -jar powernukkitx.jar
 ```
 
-## Compatibilité
+## Compatibility
 
-| Plugin | Intégration |
+| Plugin | Integration |
 | --- | --- |
-| FrenchEconomy 1.0 | Soldes, existence de compte, dépôts et retraits. Les données restent dans FrenchEconomy. |
-| ShopUI 2.0.1 | Fournisseur injecté par son API publique ; achats et ventes utilisent le fournisseur économique sélectionné par NVaultX. |
-| StatBoard 1.0.0 | Son connecteur FrenchEconomy existant utilise les mêmes portefeuilles. `/nvaultx` vérifie le fournisseur réellement choisi. |
-| LuckPerms PNX 5.4.0 | Permissions contextuelles, groupe principal, groupes hérités, préfixes/suffixes et métadonnées ; modification des permissions globales permanentes. |
-| Permissions natives PNX | Vérification des droits des joueurs connectés lorsqu'aucun fournisseur de priorité supérieure n'est actif. |
+| FrenchEconomy 1.0 | Account checks, balances, deposits and withdrawals. FrenchEconomy stores the balances. |
+| ShopUI 2.0.1 | NVaultX registers a provider through ShopUI's public API. Purchases and sales use the active NVaultX economy provider. |
+| StatBoard 1.0.0 | Its existing FrenchEconomy connector reads the same player wallets. If StatBoard selects LlamaEconomy or EconomyAPI instead, verify provider selection with `/nvaultx`. |
+| LuckPerms PNX 5.4.0 | Contextual permissions, primary and inherited groups, prefixes, suffixes, metadata and permanent global permission edits. |
+| Native PNX permissions | Fallback permission checks for online players. |
 
-StatBoard **ne consomme pas automatiquement tous les fournisseurs NVaultX** : son intégration actuelle passe par FrenchEconomy. Si LlamaEconomy ou EconomyAPI est aussi installé, StatBoard peut le choisir en priorité ; la commande indique alors que le partage des comptes n'est pas confirmé. Pas de migration automatique de soldes.
+ShopUI and StatBoard represent amounts as whole units. The FrenchEconomy adapter uses dollars with two decimal places. Existing balances stay with their provider.
 
-ShopUI et StatBoard représentent leurs montants en unités entières. FrenchEconomy conserve les décimales. La monnaie du connecteur FrenchEconomy est `$`, avec deux décimales.
+LlamaEconomy 1.0.2 has no NVaultX adapter. Its public write methods schedule the storage operation asynchronously and return no result. NVaultX needs a confirmed outcome to authorize purchases and faction bank transfers. [LlamaEconomy API source](https://github.com/PowerNukkitX-Bundle/LlamaEconomy/blob/v1.0.2/src/main/java/net/lldv/llamaeconomy/components/api/API.java)
 
-## API pour les développeurs
+## Developer API
 
-Déclarer `depend: [NVaultX]` dans le `plugin.yml` du consommateur. Compiler avec `NVaultX-API-1.0.0.jar` et PNX, **sans embarquer ces classes dans le JAR du consommateur**.
+Declare `depend: [NVaultX]` in the consumer's `plugin.yml`. Compile against `NVaultX-API-1.0.0.jar` and PNX as provided dependencies. Resolve services on the PNX main thread at the point of use.
 
 ```java
 import org.nvaultx.api.Economy;
 import org.nvaultx.api.NVaultX;
 
-// Depuis la boucle principale PNX :
 var service = NVaultX.find(getServer(), Economy.class);
 if (service.isEmpty()) {
-    // Désactiver proprement la fonctionnalité qui exige une économie.
     return;
 }
 var result = service.get().withdraw(player.getName(), 25.0);
 if (result.successful()) {
-    // Effectuer la prestation demandée.
+    // Fulfill the purchase.
 }
-// UNKNOWN : résultat incertain, intervention requise, aucune répétition automatique.
 ```
 
-Les fournisseurs personnalisés implémentent `Economy`, `Permission` ou `Chat`, puis appellent :
+Custom providers implement `Economy`, `Permission` or `Chat` and register with:
 
 ```java
 boolean accepted = NVaultX.register(getServer(), Economy.class, myProvider,
         this, org.powernukkitx.plugin.service.ServicePriority.HIGHER);
 ```
 
-Vérifier `accepted`. Le registre de PNX 3.0.6 refuse notamment un deuxième fournisseur de même priorité. Le connecteur FrenchEconomy et LuckPerms utilisent `NORMAL`, le repli natif `LOWEST`. Résoudre le service au moment de l'utilisation ; ne pas conserver indéfiniment un fournisseur désactivé. PNX retire les services appartenant à un plugin désactivé.
+Check the return value. The PNX 3.0.6 registry can reject a second provider at the same priority. FrenchEconomy and LuckPerms register at `NORMAL`, while the native permission fallback uses `LOWEST`. Disabled plugins lose their service registrations.
 
-Toutes les opérations de l'API s'appellent depuis la boucle principale PNX. Les changements de permissions retournent un `CompletionStage` : ne pas bloquer avec `join()`/`get()`. Leurs continuations peuvent être exécutées hors de la boucle principale ; y reprogrammer tout accès au jeu. LuckPerms exige un utilisateur déjà chargé. Les changements affectent d'abord son état en mémoire ; un échec de sauvegarde n'annule pas automatiquement cet état.
+Permission mutations return a `CompletionStage`. Use a continuation and schedule any subsequent game access on the PNX main thread. LuckPerms requires an already loaded user. A failed save can leave a change applied in memory.
 
-## Limites de cette version
+## Economy contract
 
-- API native indépendante : aucun chargement des plugins Bukkit/Spigot et aucune compatibilité binaire avec VaultAPI.
-- Les comptes économiques sont identifiés par leur nom exact, comme dans FrenchEconomy. Aucun compte n'est créé implicitement par NVaultX.
-- Montants finis, positifs ou nuls, deux décimales maximum ; montants et soldes plafonnés à 10^12 dans le connecteur. Des soldes d'une précision supérieure sont refusés, hormis de très petits résidus de calcul flottant.
-- Pas de banque, de transfert atomique entre comptes, de création de groupes ni d'édition des métadonnées de chat.
-- `SUCCESS` confirme l'état du portefeuille en mémoire, pas une écriture durable sur disque. La persistance appartient à FrenchEconomy.
-- `UNKNOWN` signifie qu'une mutation a pu avoir lieu : contrôler les comptes manuellement avant toute nouvelle tentative. Les échanges inventaire/argent de ShopUI restent soumis aux garanties de ShopUI ; NVaultX ne les rend pas atomiques.
-- LlamaEconomy n'est pas raccordé : son API publique de mutation asynchrone ne renvoie pas de confirmation de transaction exploitable par cette API synchrone.
+- Use the provider's exact player account name. Account creation belongs to the economy plugin.
+- The FrenchEconomy adapter accepts finite, nonnegative amounts with at most two decimal places and caps amounts and balances at 10^12. It tolerates minor floating-point residue.
+- `SUCCESS` confirms the provider's in-memory result. Durable persistence belongs to the provider.
+- `UNKNOWN` means the operation may have happened. Reconcile the account before retrying. ShopUI controls inventory delivery independently from the provider's money operation.
+- The API covers account operations, permission checks and edits, and read-only chat metadata. Bank accounts and atomic transfers between accounts are outside its scope.
 
-## Compilation sous Windows
+## Build and test
 
-Installer un **JDK 25** pour compiler contre le JAR publié de ShopUI. Le bytecode NVaultX et l'API ciblent Java 21.
+Use JDK 25 to compile against the published ShopUI JAR. NVaultX and its API target Java 21.
 
 ```powershell
 ./download-dependencies.ps1
-./build.ps1 -JavaHome 'C:/chemin/vers/jdk-25'
+./build.ps1 -JavaHome 'C:/path/to/jdk-25'
 ```
 
-Les dépendances officielles sont téléchargées dans `deps/` et vérifiées par SHA-256. Elles ne sont pas embarquées dans NVaultX. Le script compile, exécute les tests et produit le plugin et le JAR API à la racine.
+The download script verifies dependency SHA-256 hashes. The build script runs the tests and produces the plugin and API JARs at the project root. See [TESTING.md](TESTING.md) for automated and local server checks. In-game rendering and inventory exchanges with a real Bedrock client still need verification.
 
-## Vérifications
-
-Voir [TESTING.md](TESTING.md) : tests de contrats automatisés et intégration sur un serveur local PNX. Les interfaces et échanges d'inventaire avec un véritable client Bedrock restent à tester en jeu.
-
-## Distribution
-
-Projet indépendant, non affilié à Vault, Bukkit, Spigot, Mojang ou aux auteurs des plugins raccordés. Sources NVaultX originales sous licence MIT. Les plugins tiers conservent leurs propres licences et distributions.
+NVaultX is an independent PowerNukkitX project under the MIT license. Its API targets native PNX plugins. Third-party plugins retain their own licenses and distribution channels.
